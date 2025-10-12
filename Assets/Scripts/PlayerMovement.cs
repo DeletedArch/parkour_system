@@ -9,7 +9,7 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private float jumpForce = 5f;
     [SerializeField] private LayerMask groundLayer;
     [SerializeField] private Rigidbody rb;
-    [SerializeField] private InputAction moveAction;
+    [SerializeField] private Transform playerCamera;
 
     private InputSystem controls;
     private Vector2 moveDirection = Vector2.zero;
@@ -43,6 +43,12 @@ public class PlayerMovement : MonoBehaviour
     {
         // controls.PlayerMovement.Move.ReadValue<Vector2>();
         Move(moveDirection);
+        if (IsGrounded())
+        {
+            rb.drag = 5f;
+        } else {
+            rb.drag = 0f;
+        }
     }
 
     bool IsGrounded()
@@ -52,9 +58,11 @@ public class PlayerMovement : MonoBehaviour
 
     void Move(Vector2 direction)
     {
-        // Debug.Log(direction);
-        Vector3 move = new Vector3(direction.x, 0, direction.y);
-        rb.AddForce(move * speed * Time.deltaTime);
+        float moveX = (IsGrounded() ? 1 : 0.05f) * direction.y * speed * Time.deltaTime;
+        float moveZ = (IsGrounded() ? 1 : 0.05f) * direction.x * speed * Time.deltaTime;
+        Vector3 frontCam = new Vector3(playerCamera.forward.x, 0, playerCamera.forward.z).normalized;
+        rb.AddForce(frontCam * (moveX * speed * Time.deltaTime), ForceMode.VelocityChange);
+        rb.AddForce(playerCamera.right * (moveZ * speed * Time.deltaTime), ForceMode.VelocityChange);
     }
 
     void Jump()
