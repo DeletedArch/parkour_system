@@ -3,13 +3,14 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-public class PlayerMovement : MonoBehaviour
+public class PlayerController : MonoBehaviour
 {
     [SerializeField] private float speed = 5f;
     [SerializeField] private float jumpForce = 5f;
     [SerializeField] private LayerMask groundLayer;
     [SerializeField] private Rigidbody rb;
     [SerializeField] private Transform playerCamera;
+    [SerializeField] private Transform playerModel;
 
     private InputSystem controls;
     private Vector2 moveDirection = Vector2.zero;
@@ -63,6 +64,8 @@ public class PlayerMovement : MonoBehaviour
         Vector3 frontCam = new Vector3(playerCamera.forward.x, 0, playerCamera.forward.z).normalized;
         rb.AddForce(frontCam * (moveX * speed * Time.deltaTime), ForceMode.VelocityChange);
         rb.AddForce(playerCamera.right * (moveZ * speed * Time.deltaTime), ForceMode.VelocityChange);
+        Quaternion targetRotation = rb.velocity != Vector3.zero ? Quaternion.LookRotation(new Vector3(rb.velocity.x, 0, rb.velocity.z)) : playerModel.rotation;
+        playerModel.rotation = Quaternion.Slerp(playerModel.rotation, targetRotation, 0.1f);
     }
 
     void Jump()

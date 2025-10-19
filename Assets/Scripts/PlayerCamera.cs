@@ -26,9 +26,11 @@ public class PlayerCamera : MonoBehaviour
     }
     void Start()
     {
+        // transform.position = player.position + offset;
         controls.PlayerMovement.Camera.performed += ctx =>
         {
             Vector2 value = ctx.ReadValue<Vector2>();
+            value.y = -value.y;
             // Debug.Log(value.x + " , " + value.y);
             Vector3 dir = (transform.position - player.position).normalized;
             float currentPitch = Mathf.Asin(dir.y) * Mathf.Rad2Deg;
@@ -42,6 +44,6 @@ public class PlayerCamera : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        // transform.position = player.position + offset;
+        // transform.position = player.position + new Vector3(0, offset.y, 0);
     }
 }
