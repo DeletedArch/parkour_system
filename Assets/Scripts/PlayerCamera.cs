@@ -5,8 +5,9 @@ using UnityEngine;
 public class PlayerCamera : MonoBehaviour
 {
     [SerializeField] private Transform player;
+    [SerializeField] float sensitivity = 1f;
     private int maxAngle = 85;
-    private int minAngle = -85;
+    private int minAngle = -25;
     // [SerializeField] private Vector3 offset;
     private InputSystem controls;
 
@@ -29,9 +30,12 @@ public class PlayerCamera : MonoBehaviour
         {
             Vector2 value = ctx.ReadValue<Vector2>();
             // Debug.Log(value.x + " , " + value.y);
-            
-            transform.RotateAround(player.position, Vector3.up, value.x);
-            transform.RotateAround(player.position, transform.right, -value.y);
+            Vector3 dir = (transform.position - player.position).normalized;
+            float currentPitch = Mathf.Asin(dir.y) * Mathf.Rad2Deg;
+            value.y = Mathf.Clamp(value.y, minAngle - currentPitch, maxAngle - currentPitch);
+            transform.RotateAround(player.position, Vector3.up, value.x * sensitivity);
+            transform.RotateAround(player.position, transform.right, value.y * sensitivity);
+
         };
     }
 
