@@ -5,14 +5,27 @@ using UnityEngine.InputSystem;
 
 public class PlayerController : MonoBehaviour
 {
+
+    [SerializeField] private LayerMask groundLayer;
+    [SerializeField] private LayerMask wallLayer;
+    [SerializeField] private Rigidbody rb;
+    [SerializeField] private Transform playerCamera;
+    [SerializeField] private Transform playerModel;
+
+    [Header("Physics Settings")]
+    [SerializeField] float gravity = -25f;
+    [SerializeField] float risingMultiplier = 1f;
+    [SerializeField] float apexMultiplier = 0.6f;
+    [SerializeField] float fallingMultiplier = 2.5f;
     [SerializeField] private float speed = 100f;
     [SerializeField] private float sprintSpeed = 145f;
     [SerializeField] private float walkSpeed = 100f;
     [SerializeField] private float jumpForce = 5f;
-    [SerializeField] private LayerMask groundLayer;
-    [SerializeField] private Rigidbody rb;
-    [SerializeField] private Transform playerCamera;
-    [SerializeField] private Transform playerModel;
+    [SerializeField] private float airMoveSpeedMultiplier = 0.05f;
+    [SerializeField] private float customDrag = 0.4f;
+
+    [Header("Apex Detection")]
+    [SerializeField] float apexThreshold = 0.5f;  // Velocity range for apex
 
     private InputSystem controls;
     private Vector2 moveDirection = Vector2.zero;
@@ -54,6 +67,46 @@ public class PlayerController : MonoBehaviour
         controls.PlayerMovement.Move.canceled += ctx => moveDirection = Vector2.zero;
         controls.PlayerMovement.Sprint.performed += ctx => isSprinting = true;
         controls.PlayerMovement.Sprint.canceled += ctx => isSprinting = false;
+        Debug.Log(Vector3.up * (gravity * risingMultiplier));
+    }
+
+
+    void ApplyCustomGravity()
+    {
+        float multiplier;
+
+        // Determine which phase of jump
+        if (rb.velocity.y > apexThreshold)
+        {
+            // Rising
+            multiplier = risingMultiplier;
+        }
+        else if (rb.velocity.y > -apexThreshold)
+        {
+            // At apex (that floaty feeling)
+            multiplier = apexMultiplier;
+        }
+        else
+        {
+            // Falling (heavier, more responsive)
+            multiplier = fallingMultiplier;
+        }
+
+        // Apply the gravity force
+        Vector3 gravityForce = Vector3.up * (gravity * multiplier) * Time.deltaTime;
+        rb.AddForce(gravityForce, ForceMode.Acceleration);
+    }
+
+    void ApplyCustomDrag()
+    {
+        if (rb.velocity.magnitude < 0.1f)
+        {
+            rb.velocity = new Vector3(0, rb.velocity.y, 0);
+            return;
+        }
+        float dragValue = customDrag * Time.deltaTime;
+        rb.velocity = new Vector3(rb.velocity.x * (1 - dragValue), rb.velocity.y, rb.velocity.z * (1 - dragValue));
+        
     }
 
     // Update is called once per frame
@@ -61,15 +114,19 @@ public class PlayerController : MonoBehaviour
     {
         _stateMachine.Update();
         // Debug.Log("Move Direction: " + moveDirection + " | IsSprinting: " + isSprinting);
+        ApplyCustomGravity();
+        ApplyCustomDrag();
         Move(moveDirection);
         if (IsGrounded())
         {
-            rb.drag = 5f;
+            customDrag = 5f;
         }
         else
         {
-            rb.drag = 0.4f;
+            customDrag = 0.4f;
         }
+
+
     }
 
     public bool IsGrounded()
@@ -82,7 +139,7 @@ public class PlayerController : MonoBehaviour
         return Physics.Raycast(transform.position, playerModel.right, 0.6f, groundLayer) ||
                Physics.Raycast(transform.position, -playerModel.right, 0.6f, groundLayer);
     }
-    
+
     public void UpdateSpeed()
     {
         speed = isSprinting ? sprintSpeed : walkSpeed;
@@ -90,16 +147,26 @@ public class PlayerController : MonoBehaviour
 
     void Move(Vector2 direction)
     {
-        float moveX = (IsGrounded() ? 1 : 0.05f) * direction.y * speed * Time.deltaTime;
-        float moveZ = (IsGrounded() ? 1 : 0.05f) * direction.x * speed * Time.deltaTime;
-        Vector3 frontCam = new Vector3(playerCamera.forward.x, 0, playerCamera.forward.z).normalized;
-        rb.AddForce(frontCam * (moveX * speed * Time.deltaTime), ForceMode.VelocityChange);
-        rb.AddForce(playerCamera.right * (moveZ * speed * Time.deltaTime), ForceMode.VelocityChange);
-        Vector3 groundVelocity = new Vector3(rb.velocity.x, 0, rb.velocity.z);
-        Quaternion targetRotation = groundVelocity != Vector3.zero ? Quaternion.LookRotation(groundVelocity) : playerModel.rotation;
-        if (targetRotation != playerModel.rotation)
+        // if (direction == Vector2.zero && IsGrounded())
+        // {
+        //     if (rb.velocity.magnitude > 0.1f)
+        //         rb.AddForce(-rb.velocity * customDrag * Time.deltaTime, ForceMode.Acceleration);
+        //     else
+        //         rb.velocity = new Vector3(0, rb.velocity.y, 0);
+        // }
+        // else
         {
-            playerModel.rotation = Quaternion.Slerp(playerModel.rotation, targetRotation, 0.1f);
+            float moveX = direction.y * (speed * (IsGrounded() ? 1 : airMoveSpeedMultiplier)) * Time.deltaTime;
+            float moveZ = direction.x * (speed * (IsGrounded() ? 1 : airMoveSpeedMultiplier)) * Time.deltaTime;
+            Vector3 frontCam = new Vector3(playerCamera.forward.x, 0, playerCamera.forward.z).normalized;
+            rb.AddForce(frontCam * moveX, ForceMode.VelocityChange);
+            rb.AddForce(playerCamera.right * moveZ, ForceMode.VelocityChange);
+            Vector3 groundVelocity = new Vector3(rb.velocity.x, 0, rb.velocity.z);
+            Quaternion targetRotation = groundVelocity != Vector3.zero ? Quaternion.LookRotation(groundVelocity) : playerModel.rotation;
+            if (targetRotation != playerModel.rotation && direction != Vector2.zero)
+            {
+                playerModel.rotation = Quaternion.Slerp(playerModel.rotation, targetRotation, 0.1f);
+            }
         }
     }
 
