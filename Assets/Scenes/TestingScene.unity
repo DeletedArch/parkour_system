@@ -304,7 +304,7 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 275455136}
-  m_LocalRotation: {x: 0.1097298, y: 0.09604226, z: -0.0069412338, w: 0.9892862}
+  m_LocalRotation: {x: 0.1097298, y: 0.09604223, z: -0.006941231, w: 0.9892862}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children:
@@ -323,7 +323,6 @@ GameObject:
   - component: {fileID: 437059196}
   - component: {fileID: 437059199}
   - component: {fileID: 437059198}
-  - component: {fileID: 437059197}
   m_Layer: 0
   m_Name: Orientation
   m_TagString: Untagged
@@ -345,20 +344,6 @@ Transform:
   m_Father: {fileID: 1899011099}
   m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: -86.468, y: 0, z: 0}
---- !u!136 &437059197
-CapsuleCollider:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 437059195}
-  m_Material: {fileID: 0}
-  m_IsTrigger: 0
-  m_Enabled: 0
-  m_Radius: 0.5000001
-  m_Height: 2
-  m_Direction: 1
-  m_Center: {x: 0.000000059604645, y: 0, z: -0.00000008940697}
 --- !u!23 &437059198
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -1289,7 +1274,7 @@ Rigidbody:
   serializedVersion: 2
   m_Mass: 1
   m_Drag: 0
-  m_AngularDrag: 0.05
+  m_AngularDrag: 10
   m_UseGravity: 0
   m_IsKinematic: 0
   m_Interpolate: 1
@@ -1316,17 +1301,20 @@ MonoBehaviour:
   rb: {fileID: 1863943527}
   playerCamera: {fileID: 963194228}
   playerModel: {fileID: 1899011099}
+  useCustomGravity: 1
   gravity: -350
   risingMultiplier: 3
   apexMultiplier: 2
   fallingMultiplier: 3
+  apexThreshold: 0.5
+  MaxVelocity: 12
   speed: 40
   sprintSpeed: 60
   walkSpeed: 40
   jumpForce: 8
-  airMoveSpeedMultiplier: 0.25
+  airMoveSpeedMultiplier: 1
   customDrag: 5
-  apexThreshold: 0.5
+  jumpForwardPush: 2
 --- !u!1 &1899011098
 GameObject:
   m_ObjectHideFlags: 0
@@ -1368,7 +1356,7 @@ CapsuleCollider:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1899011098}
-  m_Material: {fileID: 0}
+  m_Material: {fileID: 13400000, guid: 19d0345770297c342ae4deda4fa09f4f, type: 2}
   m_IsTrigger: 0
   m_Enabled: 1
   m_Radius: 0.5
