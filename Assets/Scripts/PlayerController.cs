@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 
 public class PlayerController : MonoBehaviour
@@ -15,19 +16,24 @@ public class PlayerController : MonoBehaviour
 
     [Header("Physics Settings")]
     [SerializeField] bool useCustomGravity = true;
+    [SerializeField] bool canMove = true;
     [SerializeField] float gravity = -25f;
     [SerializeField] float risingMultiplier = 1f;
     [SerializeField] float apexMultiplier = 0.6f;
     [SerializeField] float fallingMultiplier = 2.5f;
     [SerializeField] float apexThreshold = 0.5f;  // Velocity range for apex
     [SerializeField] private float MaxVelocity = 12f;
-    [SerializeField] private float speed = 100f;
     [SerializeField] private float sprintSpeed = 145f;
     [SerializeField] private float walkSpeed = 100f;
     [SerializeField] private float jumpForce = 5f;
     [SerializeField] private float airMoveSpeedMultiplier = 0.05f;
-    [SerializeField] float customDrag = 0.4f;
     [SerializeField] float jumpForwardPush = 10f;
+
+    [Header("Physics Running Values")]
+    [SerializeField] private float speed = 100f;
+    [SerializeField] float customDrag = 0.4f;
+    [SerializeField] internal RaycastHit RightRaycast;
+    [SerializeField] internal RaycastHit LeftRaycast;
 
     private InputSystem controls;
     private Vector2 moveDirection = Vector2.zero;
@@ -35,10 +41,12 @@ public class PlayerController : MonoBehaviour
     private bool isSprinting = false;
     private bool queueJump = false;
 
-    public Vector2 MoveDirection { get { return moveDirection; } }
-    public bool IsSprinting { get { return isSprinting; } }
-    public float groundDrag { get { return customDrag; } set { customDrag = value; } }
-    public Vector3 Velocity { get { return rb.velocity; } }
+    internal Vector2 MoveDirection { get { return moveDirection; } }
+    internal bool IsSprinting { get { return isSprinting; } }
+    internal float groundDrag { get { return customDrag; } set { customDrag = value; } }
+    internal Vector3 Velocity { get { return rb.velocity; } set { rb.velocity = value; } }
+    internal bool UseCustomGravity { get { return useCustomGravity; } set { useCustomGravity = value; } }
+    internal bool CanMove { get { return canMove; } set { canMove = value; } }
 
     void Awake()
     {
@@ -73,7 +81,8 @@ public class PlayerController : MonoBehaviour
             if (!IsGrounded())
             {
                 queueJump = true;
-            } else
+            }
+            else
             {
                 Jump();
             }
@@ -88,6 +97,7 @@ public class PlayerController : MonoBehaviour
 
     void ApplyCustomGravity()
     {
+        if (!useCustomGravity) return;
         float multiplier;
 
         // Determine which phase of jump
@@ -108,7 +118,7 @@ public class PlayerController : MonoBehaviour
         }
 
         // Apply the gravity force
-        Vector3 gravityForce = Vector3.up * (gravity * multiplier) * Time.deltaTime;
+        Vector3 gravityForce = Vector3.up * (gravity * multiplier);
         rb.AddForce(gravityForce, ForceMode.Acceleration);
     }
 
@@ -119,7 +129,7 @@ public class PlayerController : MonoBehaviour
             rb.velocity = new Vector3(0, rb.velocity.y, 0);
             return;
         }
-        float dragValue = customDrag * Time.deltaTime;
+        float dragValue = customDrag;
         rb.velocity = new Vector3(rb.velocity.x * (1 - dragValue), rb.velocity.y, rb.velocity.z * (1 - dragValue));
 
     }
@@ -133,30 +143,52 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    void Update()
+    void FixedUpdate()
     {
         _stateMachine.Update();
         ApplyCustomGravity();
         ApplyCustomDrag();
-        MaxVelocityUpdate();
         Move(moveDirection);
+
+    }
+
+    void Update()
+    {
         Rotate(moveDirection);
+        MaxVelocityUpdate();
         if (queueJump && IsGrounded())
         {
             Jump();
             queueJump = false;
         }
+        if ((CloseToWallRight() || CloseToWallLeft()) && !IsGrounded() && moveDirection.y > 0f && moveDirection.x != 0f && rb.velocity.y < 0f)
+        {
+            _stateMachine.SetState<PlayerWallRunState>();
+        } else
+        {
+            Debug.Log("Not close to wall" + CloseToWallLeft() + CloseToWallRight());
+            Debug.Log("Move Dir" + moveDirection);
+            Debug.Log("Is Grounded" + IsGrounded());
+        }
     }
 
     public bool IsGrounded()
     {
+        Debug.DrawRay(transform.position, Vector3.down * 1.2f, Color.red);
         return Physics.Raycast(transform.position, Vector3.down, 1.2f, groundLayer);
     }
 
-    public bool CloseToWall()
+    public bool CloseToWallRight()
+    {   
+        Debug.DrawRay(transform.position, playerModel.right * 2f, Color.blue);
+        return Physics.Raycast(transform.position, playerModel.right, out RightRaycast, 2f, wallLayer);
+
+    }
+
+    public bool CloseToWallLeft()
     {
-        return Physics.Raycast(transform.position, playerModel.right, 0.6f, groundLayer) ||
-               Physics.Raycast(transform.position, -playerModel.right, 0.6f, groundLayer);
+        Debug.DrawRay(transform.position, -playerModel.right * 2f, Color.green);
+        return Physics.Raycast(transform.position, -playerModel.right, out LeftRaycast, 2f, wallLayer);
     }
 
     public void UpdateSpeed()
@@ -179,11 +211,12 @@ public class PlayerController : MonoBehaviour
         //         rb.velocity = new Vector3(0, rb.velocity.y, 0);
         // }
         // else
-            float moveX = direction.y * (speed * (IsGrounded() && !_stateMachine.CheckState<PlayerJumpState>() ? 1 : airMoveSpeedMultiplier)) * Time.deltaTime;
-            float moveZ = direction.x * (speed * (IsGrounded() && !_stateMachine.CheckState<PlayerJumpState>() ? 1 : airMoveSpeedMultiplier)) * Time.deltaTime;
-            Vector3 frontCam = new Vector3(playerCamera.forward.x, 0, playerCamera.forward.z).normalized;
-            rb.AddForce(frontCam * moveX, ForceMode.VelocityChange);
-            rb.AddForce(playerCamera.right * moveZ, ForceMode.VelocityChange);
+        if (!canMove) return;
+        float moveX = direction.y * (speed * (IsGrounded() && !_stateMachine.CheckState<PlayerJumpState>() ? 1 : airMoveSpeedMultiplier));
+        float moveZ = direction.x * (speed * (IsGrounded() && !_stateMachine.CheckState<PlayerJumpState>() ? 1 : airMoveSpeedMultiplier));
+        Vector3 frontCam = new Vector3(playerCamera.forward.x, 0, playerCamera.forward.z).normalized;
+        rb.AddForce(frontCam * moveX, ForceMode.VelocityChange);
+        rb.AddForce(playerCamera.right * moveZ, ForceMode.VelocityChange);
 
     }
 
@@ -199,23 +232,19 @@ public class PlayerController : MonoBehaviour
 
     void Jump()
     {
-        if (IsGrounded())
-        {
-            _stateMachine.SetState<PlayerJumpState>();
-            Vector3 appliedJumpForce = Vector3.up * jumpForce;
-            if (moveDirection.magnitude > 0f)
-            {
-                float moveX = moveDirection.y;
-                float moveZ = moveDirection.x;
-                Vector3 frontJumpDirection = new Vector3(playerCamera.forward.x, 0f, playerCamera.forward.z).normalized * moveX * jumpForwardPush;
-                Vector3 rightJumpDirection = playerCamera.right.normalized * moveZ * jumpForwardPush;
-                rb.AddForce(frontJumpDirection, ForceMode.Impulse);
-                rb.AddForce(rightJumpDirection, ForceMode.Impulse);
-            }
-            rb.AddForce(appliedJumpForce, ForceMode.Impulse);
-            
 
+        _stateMachine.SetState<PlayerJumpState>();
+        Vector3 appliedJumpForce = Vector3.up * jumpForce * (speed == sprintSpeed ? 1.2f : 1f);
+        if (moveDirection.magnitude > 0f)
+        {
+            float moveX = moveDirection.y;
+            float moveZ = moveDirection.x;
+            Vector3 frontJumpDirection = new Vector3(playerCamera.forward.x, 0f, playerCamera.forward.z).normalized * moveX * jumpForwardPush;
+            Vector3 rightJumpDirection = playerCamera.right.normalized * moveZ * jumpForwardPush;
+            rb.AddForce(frontJumpDirection, ForceMode.Impulse);
+            rb.AddForce(rightJumpDirection, ForceMode.Impulse);
         }
+        rb.AddForce(appliedJumpForce, ForceMode.Impulse);
     }
 
 }

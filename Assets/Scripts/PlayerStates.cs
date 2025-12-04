@@ -4,6 +4,12 @@ using UnityEngine;
 using System.Threading.Tasks;
 using UnityEngine.EventSystems;
 
+public enum WallRunDirection
+{
+    Right,
+    Left
+}
+
 public class PlayerIdleState : State<PlayerController>
 {
     private Animator _animator;
@@ -132,7 +138,7 @@ public class PlayerJumpState : State<PlayerController>
 
     public async override void Update()
     {
-        _owner.groundDrag = 2f;
+        _owner.groundDrag = 0.1f;
         await Task.Delay(200);
         if (_owner.IsGrounded())
         {
@@ -170,7 +176,8 @@ public class PlayerLandState : State<PlayerController>
         // _stateMachine.SetState<PlayerIdleState>();
         // fixed with adding physics materal
         // no delay for now as there's no need
-        _owner.groundDrag = 5f;
+        // this will be used later as an early jump trigger if key was queued
+        _owner.groundDrag = 0.2f;
         _stateMachine.SetState<PlayerIdleState>();
     }
 
@@ -212,24 +219,68 @@ public class PlayerSlideState : State<PlayerController>
 public class PlayerWallRunState : State<PlayerController>
 {
     private Animator _animator;
+    private bool canCancel = false;
+    private WallRunDirection wallRunDirection;
+    private RaycastHit wallRaycast;
+    private Vector3 normalVector;
+    private Vector3 wallRunDirectionVector;
+    private float wallRunSpeed = 13f;
 
     public PlayerWallRunState(Animator animator)
     {
         _animator = animator;
     }
 
+    Task waitForCancel()
+    {
+        return Task.Run(async () =>
+        {
+            await Task.Delay(500);
+            canCancel = true;
+        });
+    }
+
     public override void Enter()
     {
-        
+        _owner.UseCustomGravity = false;
+        _owner.CanMove = false;
+        if (_owner.CloseToWallRight())
+        {
+            wallRunDirection = WallRunDirection.Right;
+        }
+        else if (_owner.CloseToWallLeft())
+        {
+            wallRunDirection = WallRunDirection.Left;
+        }
+        wallRaycast = (wallRunDirection == WallRunDirection.Right) ? _owner.RightRaycast : _owner.LeftRaycast;
+        normalVector = wallRaycast.normal;
+        wallRunDirectionVector = (wallRunDirection == WallRunDirection.Right) ? Vector3.Cross(-normalVector, Vector3.up) : Vector3.Cross(normalVector, Vector3.up);
+        _owner.Velocity = wallRunDirectionVector * wallRunSpeed - Vector3.up * 2f;
+        waitForCancel();
     }
 
     public override void Update()
     {
-
+        _owner.Velocity = wallRunDirectionVector * wallRunSpeed - Vector3.up * 2f;
+        if (canCancel)
+        {
+            if ( !_owner.CloseToWallRight() && wallRunDirection == WallRunDirection.Right)
+            {
+                _stateMachine.SetState<PlayerIdleState>();
+            }
+            else if ( !_owner.CloseToWallLeft() && wallRunDirection == WallRunDirection.Left)
+            {
+                _stateMachine.SetState<PlayerIdleState>();
+            } else if (_owner.IsGrounded())
+            {
+                _stateMachine.SetState<PlayerIdleState>();
+            }
+        }
     }
 
     public override void Exit()
     {
-
+        _owner.UseCustomGravity = true;
+        _owner.CanMove = true;
     }
 }
