@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
+using UnityEngine.UI;
 
 public class PlayerController : MonoBehaviour
 {
@@ -12,45 +13,49 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private LayerMask wallLayer;
     [SerializeField] private Rigidbody rb;
     [SerializeField] public Transform playerCamera;
-    [SerializeField] private Transform playerModel;
+    [SerializeField] internal Transform playerModel;
+    [SerializeField] private Text debugText;
 
     [Header("Physics Settings")]
     [SerializeField] bool useCustomGravity = true;
     [SerializeField] bool canMove = true;
+    [SerializeField] bool useDrag = true;
     [SerializeField] float gravity = -25f;
     [SerializeField] float risingMultiplier = 1f;
     [SerializeField] float apexMultiplier = 0.6f;
     [SerializeField] float fallingMultiplier = 2.5f;
     [SerializeField] float apexThreshold = 0.5f;  // Velocity range for apex
-    [SerializeField] private float MaxVelocity = 12f;
-    [SerializeField] private float sprintSpeed = 145f;
-    [SerializeField] private float walkSpeed = 100f;
-    [SerializeField] private float jumpForce = 5f;
-    [SerializeField] private float airMoveSpeedMultiplier = 0.05f;
-    [SerializeField] float jumpForwardPush = 10f;
+    [SerializeField] internal float MaxVelocity = 12f;
+    [SerializeField] internal float sprintSpeed = 145f;
+    [SerializeField] internal float walkSpeed = 100f;
+    [SerializeField] internal float jumpForce = 5f;
+    [SerializeField] internal float airMoveSpeedMultiplier = 0.05f;
+    [SerializeField] internal float jumpForwardPush = 10f;
 
     [Header("Physics Running Values")]
-    [SerializeField] private float speed = 100f;
+    [SerializeField] internal float speed = 100f;
     [SerializeField] float customDrag = 0.4f;
     [SerializeField] internal RaycastHit RightRaycast;
     [SerializeField] internal RaycastHit LeftRaycast;
 
-    private InputSystem controls;
+    internal InputSystem controls;
     private Vector2 moveDirection = Vector2.zero;
     private StateMachine<PlayerController> _stateMachine;
     private bool isSprinting = false;
-    private bool queueJump = false;
+    internal float lastwallrunTime = 0f;
 
+    internal bool queueJump = false;
     internal Vector2 MoveDirection { get { return moveDirection; } }
     internal bool IsSprinting { get { return isSprinting; } }
     internal float groundDrag { get { return customDrag; } set { customDrag = value; } }
     internal Vector3 Velocity { get { return rb.velocity; } set { rb.velocity = value; } }
     internal bool UseCustomGravity { get { return useCustomGravity; } set { useCustomGravity = value; } }
     internal bool CanMove { get { return canMove; } set { canMove = value; } }
+    internal bool UseDrag { get { return useDrag; } set { useDrag = value; } }
 
     void Awake()
     {
-        _stateMachine = new StateMachine<PlayerController>(this);
+        _stateMachine = new StateMachine<PlayerController>(this, debugText);
         _stateMachine.AddState(new PlayerIdleState(GetComponent<Animator>()));
         _stateMachine.AddState(new PlayerMoveState(GetComponent<Animator>()));
         _stateMachine.AddState(new PlayerJumpState(GetComponent<Animator>()));
@@ -81,6 +86,7 @@ public class PlayerController : MonoBehaviour
             if (!IsGrounded())
             {
                 queueJump = true;
+                // Debug.Log("Jump Queued");
             }
             else
             {
@@ -91,7 +97,7 @@ public class PlayerController : MonoBehaviour
         controls.PlayerMovement.Move.canceled += ctx => moveDirection = Vector2.zero;
         controls.PlayerMovement.Sprint.performed += ctx => isSprinting = true;
         controls.PlayerMovement.Sprint.canceled += ctx => isSprinting = false;
-        Debug.Log(Vector3.up * (gravity * risingMultiplier));
+        // Debug.Log(Vector3.up * (gravity * risingMultiplier));
     }
 
 
@@ -124,6 +130,7 @@ public class PlayerController : MonoBehaviour
 
     void ApplyCustomDrag()
     {
+        if (!useDrag) return;
         if (Math.Abs(rb.velocity.x) < 0.1f && Math.Abs(rb.velocity.z) < 0.1f)
         {
             rb.velocity = new Vector3(0, rb.velocity.y, 0);
@@ -161,34 +168,36 @@ public class PlayerController : MonoBehaviour
             Jump();
             queueJump = false;
         }
-        if ((CloseToWallRight() || CloseToWallLeft()) && !IsGrounded() && moveDirection.y > 0f && moveDirection.x != 0f && rb.velocity.y < 0f)
+
+
+        if ((CloseToWallRight() || CloseToWallLeft()) && !IsGrounded() && rb.velocity.y < 0f && Time.time - lastwallrunTime > 0.6f)
         {
             _stateMachine.SetState<PlayerWallRunState>();
         } else
         {
-            Debug.Log("Not close to wall" + CloseToWallLeft() + CloseToWallRight());
-            Debug.Log("Move Dir" + moveDirection);
-            Debug.Log("Is Grounded" + IsGrounded());
+            // Debug.Log("Not close to wall" + CloseToWallLeft() + CloseToWallRight());
+            // Debug.Log("Move Dir" + moveDirection);
+            // Debug.Log("Is Grounded" + IsGrounded());
         }
     }
 
     public bool IsGrounded()
     {
-        Debug.DrawRay(transform.position, Vector3.down * 1.2f, Color.red);
-        return Physics.Raycast(transform.position, Vector3.down, 1.2f, groundLayer);
+        Debug.DrawRay(transform.position, Vector3.down * 1.1f, Color.red);
+        return Physics.Raycast(transform.position, Vector3.down, 1.1f, groundLayer);
     }
 
     public bool CloseToWallRight()
     {   
-        Debug.DrawRay(transform.position, playerModel.right * 2f, Color.blue);
-        return Physics.Raycast(transform.position, playerModel.right, out RightRaycast, 2f, wallLayer);
+        Debug.DrawRay(transform.position, playerModel.right * playerModel.localScale.x * 0.7f, Color.blue);
+        return Physics.Raycast(transform.position, playerModel.right, out RightRaycast, playerModel.localScale.x * 0.7f, wallLayer);
 
     }
 
     public bool CloseToWallLeft()
     {
-        Debug.DrawRay(transform.position, -playerModel.right * 2f, Color.green);
-        return Physics.Raycast(transform.position, -playerModel.right, out LeftRaycast, 2f, wallLayer);
+        Debug.DrawRay(transform.position, -playerModel.right * playerModel.localScale.x * 0.7f, Color.green);
+        return Physics.Raycast(transform.position, -playerModel.right, out LeftRaycast, playerModel.localScale.x * 0.7f, wallLayer);
     }
 
     public void UpdateSpeed()
@@ -232,7 +241,6 @@ public class PlayerController : MonoBehaviour
 
     void Jump()
     {
-
         _stateMachine.SetState<PlayerJumpState>();
         Vector3 appliedJumpForce = Vector3.up * jumpForce * (speed == sprintSpeed ? 1.2f : 1f);
         if (moveDirection.magnitude > 0f)
@@ -245,6 +253,11 @@ public class PlayerController : MonoBehaviour
             rb.AddForce(rightJumpDirection, ForceMode.Impulse);
         }
         rb.AddForce(appliedJumpForce, ForceMode.Impulse);
+    }
+
+    internal void UpdateGroundDrag(float newDrag)
+    {
+        groundDrag = newDrag;
     }
 
 }

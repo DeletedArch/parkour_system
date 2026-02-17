@@ -3,12 +3,16 @@ using System.Collections.Generic;
 using UnityEngine;
 using System.Threading.Tasks;
 using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
 
 public enum WallRunDirection
 {
     Right,
-    Left
+    Left,
+    None
 }
+
+
 
 public class PlayerIdleState : State<PlayerController>
 {
@@ -21,6 +25,7 @@ public class PlayerIdleState : State<PlayerController>
 
     public override void Enter()
     {
+        // _owner.UseDrag = true;
         if (_owner.MoveDirection.magnitude >= 0.1f)
         {
             _stateMachine.SetState<PlayerMoveState>();
@@ -59,7 +64,8 @@ public class PlayerMoveState : State<PlayerController>
         if (_owner.IsSprinting)
         {
             _stateMachine.SetState<PlayerSprintState>();
-        } else
+        }
+        else
             _owner.UpdateSpeed();
     }
 
@@ -99,9 +105,10 @@ public class PlayerSprintState : State<PlayerController>
         if (!_owner.IsSprinting)
         {
             _stateMachine.SetState<PlayerMoveState>();
-        } else
+        }
+        else
             _owner.UpdateSpeed();
-        
+
     }
 
     public override void Update()
@@ -133,13 +140,19 @@ public class PlayerJumpState : State<PlayerController>
 
     public override void Enter()
     {
-        Debug.Log("Entered Jump State");
+        // Debug.Log("Entered Jump State");
+        _owner.UseDrag = false;
     }
 
-    public async override void Update()
+    public override void Update()
     {
-        _owner.groundDrag = 0.1f;
-        await Task.Delay(200);
+        _owner.StartCoroutine(UpdateCoroutine());
+    }
+
+    IEnumerator UpdateCoroutine()
+    {
+        _owner.UpdateGroundDrag(0.1f);
+        yield return new WaitForSeconds(0.2f);
         if (_owner.IsGrounded())
         {
             _stateMachine.SetState<PlayerLandState>();
@@ -177,7 +190,8 @@ public class PlayerLandState : State<PlayerController>
         // fixed with adding physics materal
         // no delay for now as there's no need
         // this will be used later as an early jump trigger if key was queued
-        _owner.groundDrag = 0.2f;
+        _owner.UpdateGroundDrag(0.2f);
+        _owner.UseDrag = true;
         _stateMachine.SetState<PlayerIdleState>();
     }
 
@@ -221,66 +235,131 @@ public class PlayerWallRunState : State<PlayerController>
     private Animator _animator;
     private bool canCancel = false;
     private WallRunDirection wallRunDirection;
+    private WallRunDirection lastWallRunDirection = WallRunDirection.None;
     private RaycastHit wallRaycast;
     private Vector3 normalVector;
     private Vector3 wallRunDirectionVector;
     private float wallRunSpeed = 13f;
+    private float jumpOffForce = 30f;
+    private bool hasJumpedOffWall = false;
+
 
     public PlayerWallRunState(Animator animator)
     {
         _animator = animator;
     }
 
-    Task waitForCancel()
+    IEnumerator waitForCancel()
     {
-        return Task.Run(async () =>
+
+        yield return new WaitForSeconds(0.1f);
+        canCancel = true;
+
+    }
+
+    IEnumerator waitForMove()
+    {
+        yield return new WaitForSeconds(0.1f);
+        _owner.CanMove = true;
+    }
+
+    IEnumerator restoreDrag()
+    {
+        yield return new WaitForSeconds(0.4f);
+        _owner.UseDrag = true;
+    }
+
+    async void ExtraJumpOffForce()
+    {
+        // yield return new WaitForSeconds(0f);
+        float extraForceDuration = 0.2f;
+        float timer = 0f;
+        while (timer < extraForceDuration)
         {
-            await Task.Delay(500);
-            canCancel = true;
-        });
+            timer += Time.deltaTime;
+            // Vector3 appliedJumpForce = Vector3.up * (_owner.jumpForce + (_owner.IsSprinting ? 2f : 1.25f)) * Time.deltaTime;
+            Vector3 frontJumpDirection = new Vector3(_owner.playerCamera.forward.x, 0f, _owner.playerCamera.forward.z).normalized * _owner.jumpForwardPush * jumpOffForce;
+            Vector3 rightJumpDirection = wallRunDirection == WallRunDirection.Right ?
+                -_owner.playerModel.right * jumpOffForce :
+                 _owner.playerModel.right * jumpOffForce;
+            _owner.AddForce(frontJumpDirection, ForceMode.Acceleration);
+            _owner.AddForce(rightJumpDirection, ForceMode.Acceleration);
+        }
+    }
+
+    void JumpOffWall(InputAction.CallbackContext context)
+    {
+        if (!canCancel) return;
+        hasJumpedOffWall = true;
+        _owner.queueJump = false; // reset jump queue
+        _stateMachine.SetState<PlayerJumpState>();
+        Vector3 appliedJumpForce = Vector3.up * (_owner.jumpForce + (_owner.IsSprinting ? 2f : 1.25f));
+
+        // float moveZ = _owner.MoveDirection.x;
+        Vector3 frontJumpDirection = new Vector3(_owner.playerCamera.forward.x, 0f, _owner.playerCamera.forward.z).normalized * _owner.jumpForwardPush;
+        Vector3 rightJumpDirection = wallRunDirection == WallRunDirection.Right ?
+            -_owner.playerModel.right * jumpOffForce :
+             _owner.playerModel.right * jumpOffForce;
+        Debug.DrawLine(_owner.transform.position, _owner.transform.position + frontJumpDirection, Color.red, 5f);
+        Debug.DrawLine(_owner.transform.position, _owner.transform.position + rightJumpDirection, Color.blue, 5f);
+        _owner.AddForce(frontJumpDirection, ForceMode.Impulse);
+        _owner.AddForce(rightJumpDirection, ForceMode.Impulse);
+        _owner.AddForce(appliedJumpForce, ForceMode.Impulse);
     }
 
     public override void Enter()
     {
+        _owner.UseDrag = false;
+        _owner.controls.PlayerMovement.Jump.performed += JumpOffWall;
         _owner.UseCustomGravity = false;
         _owner.CanMove = false;
         if (_owner.CloseToWallRight())
-        {
             wallRunDirection = WallRunDirection.Right;
-        }
-        else if (_owner.CloseToWallLeft())
-        {
+        if (_owner.CloseToWallLeft())
             wallRunDirection = WallRunDirection.Left;
-        }
+        // if (lastWallRunDirection == wallRunDirection && Time.time - _owner.lastwallrunTime < 0.5f)
+        // {
+        //     _stateMachine.SetState<PlayerIdleState>();
+        //     return;
+        // }
         wallRaycast = (wallRunDirection == WallRunDirection.Right) ? _owner.RightRaycast : _owner.LeftRaycast;
         normalVector = wallRaycast.normal;
         wallRunDirectionVector = (wallRunDirection == WallRunDirection.Right) ? Vector3.Cross(-normalVector, Vector3.up) : Vector3.Cross(normalVector, Vector3.up);
         _owner.Velocity = wallRunDirectionVector * wallRunSpeed - Vector3.up * 2f;
-        waitForCancel();
+        _owner.StartCoroutine(waitForCancel());
     }
 
     public override void Update()
     {
         _owner.Velocity = wallRunDirectionVector * wallRunSpeed - Vector3.up * 2f;
-        if (canCancel)
+        if (hasJumpedOffWall) return; // prevent state change right after jumping off wall
+        if (!_owner.CloseToWallRight() && wallRunDirection == WallRunDirection.Right)
         {
-            if ( !_owner.CloseToWallRight() && wallRunDirection == WallRunDirection.Right)
-            {
-                _stateMachine.SetState<PlayerIdleState>();
-            }
-            else if ( !_owner.CloseToWallLeft() && wallRunDirection == WallRunDirection.Left)
-            {
-                _stateMachine.SetState<PlayerIdleState>();
-            } else if (_owner.IsGrounded())
-            {
-                _stateMachine.SetState<PlayerIdleState>();
-            }
+            Debug.Log("No longer close to right wall, landing");
+            _stateMachine.SetState<PlayerLandState>();
+        }
+        else if (!_owner.CloseToWallLeft() && wallRunDirection == WallRunDirection.Left)
+        {
+            Debug.Log("No longer close to left wall, landing");
+            _stateMachine.SetState<PlayerLandState>();
+        }
+        else if (_owner.IsGrounded())
+        {
+            Debug.Log("Landed on ground, end wall run");
+            _stateMachine.SetState<PlayerLandState>();
         }
     }
 
     public override void Exit()
     {
         _owner.UseCustomGravity = true;
-        _owner.CanMove = true;
+        // _owner.CanMove = true;
+        _owner.StartCoroutine(waitForMove());
+        canCancel = false;
+        hasJumpedOffWall = false;
+        // if (lastWallRunDirection != wallRunDirection)
+        _owner.lastwallrunTime = Time.time;
+        lastWallRunDirection = wallRunDirection;
+        _owner.controls.PlayerMovement.Jump.performed -= JumpOffWall;
     }
 }
